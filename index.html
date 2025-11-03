@@ -1323,8 +1323,14 @@
       // Limpar respostas anteriores
       studentAnswers = {};
       
-      // Verificar se já existem respostas salvas para este aluno
-      const existingAnswers = allData.find(item => item.type === 'answers' && item.student_id === studentId);
+      // Verificar se já existem respostas salvas para este aluno neste mês
+      const existingAnswers = allData.find(item => 
+        item.type === 'answers' && 
+        item.student_id === studentId && 
+        item.coordinator_id === currentCoordinatorId && 
+        item.month === currentMonth
+      );
+      
       if (existingAnswers) {
         const savedAnswers = JSON.parse(existingAnswers.answers);
         savedAnswers.forEach((answer, index) => {
@@ -1332,6 +1338,16 @@
             studentAnswers[index + 1] = answer;
           }
         });
+        
+        // Mostrar informação de que já existe resultado
+        const studentData = allData.find(s => s.type === 'student' && s.id === studentId);
+        showMessage(`📝 Editando respostas de ${studentData?.name || 'aluno'} - Resultado atual: ${existingAnswers.score}/${currentGabarito.length} (${existingAnswers.percentage}%) - ${existingAnswers.category}`, 'success');
+        
+        // Atualizar texto do botão
+        document.getElementById('submitAnswersBtn').innerHTML = '💾 Atualizar Respostas';
+      } else {
+        // Novo lançamento
+        document.getElementById('submitAnswersBtn').innerHTML = '📤 Enviar Respostas';
       }
       
       generateStudentAnswersGrid();
@@ -1689,6 +1705,10 @@
             <div style="font-size: 18px;">${student.answer.score}/${currentGabarito.length} questões</div>
             <div style="font-size: 16px;">${student.answer.percentage}%</div>
             <div style="font-size: 14px; margin-top: 5px;">${student.answer.category}</div>
+            <div style="margin-top: 10px; display: flex; gap: 8px;">
+              <button class="btn btn-primary btn-small" onclick="editStudentResult('${student.id}')" style="font-size: 12px; padding: 6px 12px;">✏️ Editar</button>
+              <button class="btn btn-danger btn-small" onclick="deleteStudentResult('${student.id}')" style="font-size: 12px; padding: 6px 12px;">🗑️ Excluir</button>
+            </div>
           </div>
         </div>
       `).join('');
@@ -1748,9 +1768,14 @@
             <div class="student-score ${getCategoryClass(student.answer.category)}">
               ${student.answer.score}/${currentGabarito.length} (${student.answer.percentage}%)
             </div>
-            <div class="${getCategoryClass(student.answer.category)}">${student.answer.category}</div>
+            <div class="${getCategoryClass(student.answer.category)}" style="margin-bottom: 15px;">${student.answer.category}</div>
+            <div style="display: flex; gap: 10px; justify-content: center;">
+              <button class="btn btn-primary btn-small" onclick="editStudentResult('${student.id}')">✏️ Editar</button>
+              <button class="btn btn-danger btn-small" onclick="deleteStudentResult('${student.id}')">🗑️ Excluir</button>
+            </div>
           ` : `
-            <div style="color: #999; font-style: italic;">Ainda não respondeu</div>
+            <div style="color: #999; font-style: italic; margin-bottom: 15px;">Ainda não respondeu</div>
+            <button class="btn btn-primary btn-small" onclick="editStudentResult('${student.id}')">➕ Lançar</button>
           `}
         </div>
       `).join('');
@@ -2011,6 +2036,84 @@
       document.querySelectorAll('.confetti').forEach(confetti => confetti.remove());
     }
 
+    function editStudentResult(studentId) {
+      // Ir para a aba de respostas
+      showTab('answers');
+      document.querySelector('.tab[onclick="showTab(\'answers\')"]').classList.add('active');
+      
+      // Selecionar o aluno
+      document.getElementById('studentSelect').value = studentId;
+      
+      // Carregar as respostas do aluno
+      loadStudentAnswers();
+      
+      // Mostrar mensagem informativa
+      const studentData = allData.find(s => s.type === 'student' && s.id === studentId);
+      showMessage(`🎯 Editando respostas de ${studentData?.name || 'aluno'}. Faça as alterações e clique em "Atualizar Respostas".`, 'success');
+    }
+
+    function deleteStudentResult(studentId) {
+      const studentData = allData.find(s => s.type === 'student' && s.id === studentId);
+      const studentName = studentData?.name || 'aluno';
+      
+      // Criar modal de confirmação personalizado (não usar confirm() por causa do iframe)
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay show';
+      overlay.style.zIndex = '1998';
+      
+      const modal = document.createElement('div');
+      modal.className = 'answer-selector';
+      modal.style.zIndex = '1999';
+      modal.innerHTML = `
+        <h3 style="color: #dc3545; margin-bottom: 20px;">⚠️ Confirmar Exclusão</h3>
+        <p style="margin-bottom: 25px; text-align: center; color: #333;">
+          Tem certeza que deseja excluir o resultado de <strong>${studentName}</strong>?<br>
+          <span style="color: #666; font-size: 14px;">Esta ação não pode ser desfeita.</span>
+        </p>
+        <div style="display: flex; gap: 15px; justify-content: center;">
+          <button class="btn btn-danger" onclick="confirmDeleteResult('${studentId}')">🗑️ Sim, Excluir</button>
+          <button class="btn" onclick="cancelDeleteResult()" style="background: #6c757d; color: white;">❌ Cancelar</button>
+        </div>
+      `;
+      
+      document.body.appendChild(overlay);
+      document.body.appendChild(modal);
+    }
+
+    function confirmDeleteResult(studentId) {
+      // Encontrar e remover o resultado
+      const resultIndex = allData.findIndex(item => 
+        item.type === 'answers' && 
+        item.student_id === studentId && 
+        item.coordinator_id === currentCoordinatorId && 
+        item.month === currentMonth
+      );
+      
+      if (resultIndex !== -1) {
+        const studentData = allData.find(s => s.type === 'student' && s.id === studentId);
+        const studentName = studentData?.name || 'aluno';
+        
+        allData.splice(resultIndex, 1);
+        saveAllData();
+        
+        showMessage(`✅ Resultado de ${studentName} excluído com sucesso!`, 'success');
+        
+        // Atualizar todas as visualizações
+        updateResults();
+        updateLista();
+      }
+      
+      cancelDeleteResult();
+    }
+
+    function cancelDeleteResult() {
+      const overlay = document.querySelector('.overlay[style*="1998"]');
+      const modal = document.querySelector('.answer-selector[style*="1999"]');
+      
+      if (overlay) overlay.remove();
+      if (modal) modal.remove();
+    }
+
     function showMessage(text, type) {
       const container = document.getElementById('messages');
       const message = document.createElement('div');
@@ -2026,5 +2129,5 @@
     // Inicializar aplicação
     initializeApp();
   </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'998d42dcb490ba19',t:'MTc2MjE4NzQ3OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'998d4ecaa03fba19',t:'MTc2MjE4Nzk2Ny4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
