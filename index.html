@@ -4,8 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sistema de Simulados</title>
-  <script src="/_sdk/data_sdk.js"></script>
-  <script src="/_sdk/element_sdk.js"></script>
   <style>
     body {
       box-sizing: border-box;
@@ -635,6 +633,25 @@
       height: auto;
     }
 
+    .auto-save-indicator {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #28a745;
+      color: white;
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .auto-save-indicator.show {
+      opacity: 1;
+    }
+
     @media (max-width: 768px) {
       .container {
         padding: 20px;
@@ -658,9 +675,14 @@
     }
   </style>
   <style>@view-transition { navigation: auto; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+  <script src="/_sdk/element_sdk.js" type="text/javascript"></script>
   <script src="https://cdn.tailwindcss.com" type="text/javascript"></script>
  </head>
- <body><!-- Tela de Login -->
+ <body><!-- Indicador de salvamento automático -->
+  <div id="autoSaveIndicator" class="auto-save-indicator">
+   💾 Salvo automaticamente
+  </div><!-- Tela de Login -->
   <div id="loginScreen" class="container" style="max-width: 500px;">
    <div class="header">
     <h1 class="title">Sistema de Simulados</h1>
@@ -701,8 +723,6 @@
       </div>
      </div>
      <div id="gabaritoGrid" class="gabarito-grid"></div>
-     <div style="margin-top: 20px; text-align: center;"><button class="btn btn-success" onclick="saveGabarito()" id="saveGabaritoBtn" style="display: none;">💾 Salvar Gabarito</button>
-     </div>
      <div id="gabaritoSummary" class="gabarito-summary" style="display: none;"></div>
     </div>
    </div><!-- Tab Alunos -->
@@ -880,23 +900,54 @@
       'coord5': 'Luiza - Coordenadora 5º ano'
     };
 
-    const dataHandler = {
-      onDataChanged(data) {
-        allData = data;
-        updateStudentsList();
-        updateStudentSelect();
-        updateResults();
-        loadGabarito();
+    function loadAllData() {
+      try {
+        const savedData = localStorage.getItem('simuladosData');
+        if (savedData) {
+          allData = JSON.parse(savedData);
+          console.log('Dados carregados:', allData.length, 'registros');
+        } else {
+          allData = [];
+          console.log('Nenhum dado salvo encontrado');
+        }
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        allData = [];
       }
-    };
+      
+      updateStudentsList();
+      updateStudentSelect();
+      updateResults();
+      loadGabarito();
+    }
+
+    function saveAllData() {
+      try {
+        localStorage.setItem('simuladosData', JSON.stringify(allData));
+        console.log('Dados salvos:', allData.length, 'registros');
+        showAutoSaveIndicator();
+        return true;
+      } catch (error) {
+        console.error('Erro ao salvar dados:', error);
+        showMessage('Erro ao salvar dados. Verifique o espaço de armazenamento.', 'error');
+        return false;
+      }
+    }
+
+    function showAutoSaveIndicator() {
+      const indicator = document.getElementById('autoSaveIndicator');
+      indicator.classList.add('show');
+      setTimeout(() => {
+        indicator.classList.remove('show');
+      }, 2000);
+    }
+
+    function generateId() {
+      return Date.now().toString() + Math.random().toString(36).substr(2, 9);
+    }
 
     async function initializeApp() {
-      if (window.dataSdk) {
-        const result = await window.dataSdk.init(dataHandler);
-        if (!result.isOk) {
-          showMessage('Erro ao inicializar o sistema', 'error');
-        }
-      }
+      loadAllData();
     }
 
     function login() {
@@ -925,6 +976,8 @@
         document.getElementById('coordinatorSelect').value = '';
         document.getElementById('passwordInput').value = '';
         
+        console.log('Login realizado:', coordinatorId);
+        
         // Atualizar dados filtrados
         updateStudentsList();
         updateStudentSelect();
@@ -942,6 +995,7 @@
       // Limpar dados sensíveis
       document.getElementById('studentsList').innerHTML = '';
       document.getElementById('resultsList').innerHTML = '';
+      console.log('Logout realizado');
     }
 
     function showTab(tabName) {
@@ -973,7 +1027,6 @@
       }
 
       const grid = document.getElementById('gabaritoGrid');
-      const saveBtn = document.getElementById('saveGabaritoBtn');
       
       grid.innerHTML = '';
       gabaritoAnswers = {};
@@ -991,7 +1044,6 @@
         grid.appendChild(questionDiv);
       }
       
-      saveBtn.style.display = 'block';
       updateGabaritoProgress();
     }
 
@@ -1060,6 +1112,9 @@
           questionItem.classList.add('selected');
           
           updateGabaritoProgress();
+          
+          // Salvamento automático do gabarito
+          autoSaveGabarito();
         }
         
         closeAnswerSelector();
@@ -1090,6 +1145,9 @@
           questionItem.classList.remove('selected');
           
           updateGabaritoProgress();
+          
+          // Salvamento automático do gabarito
+          autoSaveGabarito();
         }
         
         closeAnswerSelector();
@@ -1134,19 +1192,14 @@
       }
     }
 
-    async function saveGabarito() {
+    function autoSaveGabarito() {
+      if (!currentCoordinatorId) return;
+      
       const totalQuestions = parseInt(document.getElementById('totalQuestions').value);
       const selectedMonth = document.getElementById('simuladoMonth').value;
       const answeredQuestions = Object.keys(gabaritoAnswers).length;
       
-      if (answeredQuestions === 0) {
-        showMessage('Por favor, preencha pelo menos uma questão', 'error');
-        return;
-      }
-      
-      if (answeredQuestions < totalQuestions) {
-        showMessage(`Atenção: Salvando gabarito com ${answeredQuestions} de ${totalQuestions} questões preenchidas`, 'error');
-      }
+      if (answeredQuestions === 0) return;
 
       // Converter para array ordenado
       const gabaritoArray = [];
@@ -1156,6 +1209,7 @@
 
       const gabaritoData = {
         id: `gabarito_${currentCoordinatorId}_${selectedMonth}`,
+        __backendId: generateId(),
         type: 'gabarito',
         coordinator_id: currentCoordinatorId,
         month: selectedMonth,
@@ -1164,30 +1218,20 @@
         created_at: new Date().toISOString()
       };
 
-      const existingGabarito = allData.find(item => 
+      const existingIndex = allData.findIndex(item => 
         item.type === 'gabarito' && 
         item.coordinator_id === currentCoordinatorId && 
         item.month === selectedMonth
       );
       
-      if (existingGabarito) {
-        const updatedGabarito = { ...existingGabarito, ...gabaritoData };
-        const result = await window.dataSdk.update(updatedGabarito);
-        if (result.isOk) {
-          showMessage(`Gabarito de ${selectedMonth} salvo com sucesso! ${answeredQuestions} questões definidas.`, 'success');
-          currentMonth = selectedMonth;
-        } else {
-          showMessage('Erro ao atualizar gabarito', 'error');
-        }
+      if (existingIndex !== -1) {
+        allData[existingIndex] = { ...allData[existingIndex], ...gabaritoData };
       } else {
-        const result = await window.dataSdk.create(gabaritoData);
-        if (result.isOk) {
-          showMessage(`Gabarito de ${selectedMonth} salvo com sucesso! ${answeredQuestions} questões definidas.`, 'success');
-          currentMonth = selectedMonth;
-        } else {
-          showMessage('Erro ao salvar gabarito', 'error');
-        }
+        allData.push(gabaritoData);
       }
+      
+      saveAllData();
+      currentMonth = selectedMonth;
     }
 
     function loadGabarito() {
@@ -1336,23 +1380,41 @@
       generateStudentAnswersGrid();
     }
 
-    async function addStudent() {
+    function addStudent() {
+      console.log('Tentando cadastrar aluno...');
+      
+      if (!currentCoordinatorId) {
+        console.error('Coordenadora não logada');
+        showMessage('Erro: Faça login primeiro!', 'error');
+        return;
+      }
+
       const name = document.getElementById('studentName').value.trim();
       const school = document.getElementById('studentSchool').value.trim();
       const studentClass = document.getElementById('studentClass').value.trim();
+
+      console.log('Dados do formulário:', { name, school, studentClass });
 
       if (!name || !school || !studentClass) {
         showMessage('Por favor, preencha todos os campos', 'error');
         return;
       }
 
-      if (allData.length >= 999) {
-        showMessage('Limite máximo de 999 registros atingido', 'error');
+      // Verificar se já existe aluno com mesmo nome na mesma coordenação
+      const existingStudent = allData.find(item => 
+        item.type === 'student' && 
+        item.coordinator_id === currentCoordinatorId && 
+        item.name.toLowerCase() === name.toLowerCase()
+      );
+
+      if (existingStudent) {
+        showMessage('Já existe um aluno com este nome cadastrado!', 'error');
         return;
       }
 
       const studentData = {
         id: `student_${currentCoordinatorId}_${Date.now()}`,
+        __backendId: generateId(),
         type: 'student',
         coordinator_id: currentCoordinatorId,
         name: name,
@@ -1361,19 +1423,38 @@
         created_at: new Date().toISOString()
       };
 
-      const result = await window.dataSdk.create(studentData);
-      if (result.isOk) {
-        showMessage('Aluno cadastrado com sucesso!', 'success');
-        document.getElementById('studentName').value = '';
-        document.getElementById('studentSchool').value = '';
-        document.getElementById('studentClass').value = '';
-      } else {
-        showMessage('Erro ao cadastrar aluno', 'error');
+      console.log('Dados do aluno a ser salvo:', studentData);
+
+      try {
+        allData.push(studentData);
+        const saved = saveAllData();
+        
+        if (saved) {
+          showMessage(`✅ Aluno "${name}" cadastrado com sucesso!`, 'success');
+          
+          // Limpar campos
+          document.getElementById('studentName').value = '';
+          document.getElementById('studentSchool').value = '';
+          document.getElementById('studentClass').value = '';
+          
+          // Atualizar listas
+          updateStudentsList();
+          updateStudentSelect();
+          
+          console.log('Aluno cadastrado com sucesso. Total de registros:', allData.length);
+        }
+        
+      } catch (error) {
+        console.error('Erro ao cadastrar aluno:', error);
+        showMessage('Erro ao salvar aluno. Tente novamente.', 'error');
       }
     }
 
     function updateStudentsList() {
-      if (!currentCoordinatorId) return;
+      if (!currentCoordinatorId) {
+        console.log('Coordenadora não logada - não atualizando lista');
+        return;
+      }
       
       const students = allData.filter(item => 
         item.type === 'student' && 
@@ -1382,6 +1463,7 @@
       const container = document.getElementById('studentsList');
       const loading = document.getElementById('studentsLoading');
 
+      console.log('Atualizando lista de alunos. Encontrados:', students.length);
       loading.classList.remove('show');
 
       if (students.length === 0) {
@@ -1412,19 +1494,24 @@
         students.map(student => `<option value="${student.id}">${student.name} - ${student.school} - ${student.class}</option>`).join('');
     }
 
-    async function deleteStudent(backendId) {
-      const student = allData.find(item => item.__backendId === backendId);
-      if (student) {
-        const result = await window.dataSdk.delete(student);
-        if (result.isOk) {
-          showMessage('Aluno removido com sucesso!', 'success');
-        } else {
-          showMessage('Erro ao remover aluno', 'error');
-        }
+    function deleteStudent(backendId) {
+      if (!confirm('Tem certeza que deseja remover este aluno?')) {
+        return;
+      }
+      
+      const studentIndex = allData.findIndex(item => item.__backendId === backendId);
+      if (studentIndex !== -1) {
+        const studentName = allData[studentIndex].name;
+        allData.splice(studentIndex, 1);
+        saveAllData();
+        showMessage(`Aluno "${studentName}" removido com sucesso!`, 'success');
+        updateStudentsList();
+        updateStudentSelect();
+        updateResults();
       }
     }
 
-    async function submitAnswers() {
+    function submitAnswers() {
       const studentId = document.getElementById('studentSelect').value;
 
       if (!studentId) {
@@ -1467,6 +1554,7 @@
 
       const answerData = {
         id: `answers_${studentId}_${currentMonth}`,
+        __backendId: generateId(),
         type: 'answers',
         coordinator_id: currentCoordinatorId,
         month: currentMonth,
@@ -1479,45 +1567,35 @@
       };
 
       // Verificar se já existe resposta para este aluno neste mês
-      const existingAnswer = allData.find(item => 
+      const existingIndex = allData.findIndex(item => 
         item.type === 'answers' && 
         item.student_id === studentId && 
         item.coordinator_id === currentCoordinatorId && 
         item.month === currentMonth
       );
       
-      if (existingAnswer) {
-        const updatedAnswer = { ...existingAnswer, ...answerData };
-        const result = await window.dataSdk.update(updatedAnswer);
-        if (result.isOk) {
-          showCelebrationPopup(category, percentage);
-          showMessage(`Respostas atualizadas! Pontuação: ${correctAnswers}/${currentGabarito.length} (${percentage}%) - ${category}`, 'success');
-          // Limpar interface
-          studentAnswers = {};
-          document.getElementById('studentSelect').value = '';
-          document.getElementById('studentAnswersSection').style.display = 'none';
-        } else {
-          showMessage('Erro ao atualizar respostas', 'error');
-        }
+      if (existingIndex !== -1) {
+        allData[existingIndex] = { ...allData[existingIndex], ...answerData };
+        showMessage(`Respostas atualizadas! Pontuação: ${correctAnswers}/${currentGabarito.length} (${percentage}%) - ${category}`, 'success');
       } else {
-        const result = await window.dataSdk.create(answerData);
-        if (result.isOk) {
-          showCelebrationPopup(category, percentage);
-          showMessage(`Respostas enviadas! Pontuação: ${correctAnswers}/${currentGabarito.length} (${percentage}%) - ${category}`, 'success');
-          // Limpar interface
-          studentAnswers = {};
-          document.getElementById('studentSelect').value = '';
-          document.getElementById('studentAnswersSection').style.display = 'none';
-        } else {
-          showMessage('Erro ao enviar respostas', 'error');
-        }
+        allData.push(answerData);
+        showMessage(`Respostas enviadas! Pontuação: ${correctAnswers}/${currentGabarito.length} (${percentage}%) - ${category}`, 'success');
       }
+      
+      saveAllData();
+      showCelebrationPopup(category, percentage);
+      
+      // Limpar interface
+      studentAnswers = {};
+      document.getElementById('studentSelect').value = '';
+      document.getElementById('studentAnswersSection').style.display = 'none';
+      
+      updateResults();
     }
 
     function getCategory(percentage) {
-      const config = window.elementSdk?.config || defaultConfig;
-      const adequate = parseInt(config.adequate_threshold || defaultConfig.adequate_threshold);
-      const intermediate = parseInt(config.intermediate_threshold || defaultConfig.intermediate_threshold);
+      const adequate = parseInt(defaultConfig.adequate_threshold);
+      const intermediate = parseInt(defaultConfig.intermediate_threshold);
 
       if (percentage >= adequate) return 'Adequado';
       if (percentage >= intermediate) return 'Intermediário';
@@ -1923,87 +2001,8 @@
       }, 5000);
     }
 
-    async function onConfigChange(config) {
-      const systemTitle = document.getElementById('systemTitle');
-      const examName = document.getElementById('examName');
-      
-      systemTitle.textContent = config.system_title || defaultConfig.system_title;
-      examName.textContent = config.exam_name || defaultConfig.exam_name;
-      
-      const primaryColor = config.primary_color || defaultConfig.primary_color;
-      const secondaryColor = config.secondary_color || defaultConfig.secondary_color;
-      
-      document.body.style.background = `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`;
-      systemTitle.style.color = primaryColor;
-      
-      const activeTab = document.querySelector('.tab.active');
-      if (activeTab) {
-        activeTab.style.background = primaryColor;
-      }
-      
-      const statNumbers = document.querySelectorAll('.stat-number');
-      statNumbers.forEach(stat => {
-        stat.style.color = primaryColor;
-      });
-    }
-
-    if (window.elementSdk) {
-      window.elementSdk.init({
-        defaultConfig,
-        onConfigChange,
-        mapToCapabilities: (config) => ({
-          recolorables: [
-            {
-              get: () => config.primary_color || defaultConfig.primary_color,
-              set: (value) => {
-                config.primary_color = value;
-                window.elementSdk.setConfig({ primary_color: value });
-              }
-            },
-            {
-              get: () => config.secondary_color || defaultConfig.secondary_color,
-              set: (value) => {
-                config.secondary_color = value;
-                window.elementSdk.setConfig({ secondary_color: value });
-              }
-            },
-            {
-              get: () => config.background_color || defaultConfig.background_color,
-              set: (value) => {
-                config.background_color = value;
-                window.elementSdk.setConfig({ background_color: value });
-              }
-            },
-            {
-              get: () => config.text_color || defaultConfig.text_color,
-              set: (value) => {
-                config.text_color = value;
-                window.elementSdk.setConfig({ text_color: value });
-              }
-            },
-            {
-              get: () => config.success_color || defaultConfig.success_color,
-              set: (value) => {
-                config.success_color = value;
-                window.elementSdk.setConfig({ success_color: value });
-              }
-            }
-          ],
-          borderables: [],
-          fontEditable: undefined,
-          fontSizeable: undefined
-        }),
-        mapToEditPanelValues: (config) => new Map([
-          ["system_title", config.system_title || defaultConfig.system_title],
-          ["exam_name", config.exam_name || defaultConfig.exam_name],
-          ["total_questions", config.total_questions || defaultConfig.total_questions],
-          ["adequate_threshold", config.adequate_threshold || defaultConfig.adequate_threshold],
-          ["intermediate_threshold", config.intermediate_threshold || defaultConfig.intermediate_threshold]
-        ])
-      });
-    }
-
+    // Inicializar aplicação
     initializeApp();
   </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'998c3088d76aba19',t:'MTc2MjE3NjI0Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'998d2b3e4507ba19',t:'MTc2MjE4NjUxMS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
