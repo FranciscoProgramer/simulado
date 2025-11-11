@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sistema de Simulados</title>
+  <script src="/_sdk/data_sdk.js"></script>
   <style>
     body {
       box-sizing: border-box;
@@ -675,7 +676,6 @@
     }
   </style>
   <style>@view-transition { navigation: auto; }</style>
-  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
   <script src="/_sdk/element_sdk.js" type="text/javascript"></script>
   <script src="https://cdn.tailwindcss.com" type="text/javascript"></script>
  </head>
@@ -871,6 +871,17 @@
     </div>
    </div><!-- Tab Resultados -->
    <div id="results" class="tab-content">
+    <div class="form-section">
+     <h2 class="form-title">🔍 Filtrar Resultados</h2>
+     <div class="form-grid">
+      <div class="form-group"><label class="form-label">Filtrar por Escola</label> <select id="resultsFilterSchool" class="form-select" onchange="filterResults()"> <option value="">📋 Todas as Escolas</option> </select>
+      </div>
+      <div class="form-group"><label class="form-label">Filtrar por Turma</label> <select id="resultsFilterClass" class="form-select" onchange="filterResults()"> <option value="">📚 Todas as Turmas</option> </select>
+      </div>
+      <div class="form-group"><label class="form-label">Filtrar por Categoria</label> <select id="resultsFilterCategory" class="form-select" onchange="filterResults()"> <option value="">🎯 Todas as Categorias</option> <option value="Adequado">✅ Adequado</option> <option value="Intermediário">⚠️ Intermediário</option> <option value="Defasagem">❌ Defasagem</option> </select>
+      </div>
+     </div>
+    </div>
     <div class="stats-grid">
      <div class="stat-card">
       <div class="stat-number" id="totalStudents">
@@ -1360,7 +1371,6 @@
         
         // Atualizar dados filtrados
         updateStudentsList();
-        updateStudentSelect();
         updateResults();
       } else {
         messageDiv.innerHTML = '<div class="message error">Senha incorreta! Tente novamente.</div>';
@@ -1389,6 +1399,9 @@
         setTimeout(updateCharts, 100);
       } else if (tabName === 'lista') {
         updateLista();
+      } else if (tabName === 'results') {
+        updateResultsFilters();
+        filterResults();
       }
     }
 
@@ -2155,8 +2168,6 @@
       }
     }
 
-
-
     // Função unificada para atualizar todos os selects
     function updateAllSelects() {
       if (!currentCoordinatorId) return;
@@ -2171,7 +2182,8 @@
         'classSchoolSelect',
         'allocationSchoolSelect', 
         'allocationFilterSchool',
-        'answersSchoolSelect'
+        'answersSchoolSelect',
+        'resultsFilterSchool'
       ];
       
       schoolSelects.forEach(selectId => {
@@ -2286,10 +2298,6 @@
     }
 
     function deleteStudent(backendId) {
-      if (!confirm('Tem certeza que deseja remover este aluno?')) {
-        return;
-      }
-      
       const studentIndex = allData.findIndex(item => item.__backendId === backendId);
       if (studentIndex !== -1) {
         const studentName = allData[studentIndex].name;
@@ -2297,7 +2305,6 @@
         saveAllData();
         showMessage(`Aluno "${studentName}" removido com sucesso!`, 'success');
         updateStudentsList();
-        updateStudentSelect();
         updateResults();
       }
     }
@@ -2468,56 +2475,146 @@
       `).join('');
     }
 
-    function updateResults() {
+    // Atualizar filtros de resultados
+    function updateResultsFilters() {
       if (!currentCoordinatorId) return;
+      
+      const schools = allData.filter(item => 
+        item.type === 'school' && 
+        item.coordinator_id === currentCoordinatorId
+      );
+      
+      const classes = allData.filter(item => 
+        item.type === 'class' && 
+        item.coordinator_id === currentCoordinatorId
+      );
+      
+      // Filtro de escola
+      const schoolFilter = document.getElementById('resultsFilterSchool');
+      if (schoolFilter) {
+        const currentValue = schoolFilter.value;
+        schoolFilter.innerHTML = '<option value="">📋 Todas as Escolas</option>' + 
+          schools.map(school => `<option value="${school.__backendId}">${school.name}</option>`).join('');
+        
+        if (schools.find(s => s.__backendId === currentValue)) {
+          schoolFilter.value = currentValue;
+        }
+      }
+      
+      // Filtro de turma
+      const classFilter = document.getElementById('resultsFilterClass');
+      if (classFilter) {
+        const currentValue = classFilter.value;
+        classFilter.innerHTML = '<option value="">📚 Todas as Turmas</option>' + 
+          classes.map(cls => {
+            const school = schools.find(s => s.__backendId === cls.school_id);
+            return `<option value="${cls.__backendId}">${cls.name} - ${school?.name || 'Escola não encontrada'}</option>`;
+          }).join('');
+        
+        if (classes.find(c => c.__backendId === currentValue)) {
+          classFilter.value = currentValue;
+        }
+      }
+    }
+
+    // Filtrar resultados
+    function filterResults() {
+      if (!currentCoordinatorId) return;
+      
+      const schoolFilter = document.getElementById('resultsFilterSchool').value;
+      const classFilter = document.getElementById('resultsFilterClass').value;
+      const categoryFilter = document.getElementById('resultsFilterCategory').value;
       
       const students = allData.filter(item => 
         item.type === 'student' && 
         item.coordinator_id === currentCoordinatorId
       );
+      
       const answers = allData.filter(item => 
         item.type === 'answers' && 
         item.coordinator_id === currentCoordinatorId && 
         item.month === currentMonth
       );
+      
+      const allocations = allData.filter(item => 
+        item.type === 'allocation' && 
+        item.coordinator_id === currentCoordinatorId
+      );
+      
       const loading = document.getElementById('resultsLoading');
       const container = document.getElementById('resultsList');
 
       loading.classList.remove('show');
 
-      // Atualizar estatísticas
-      document.getElementById('totalStudents').textContent = students.length;
-      document.getElementById('studentsWithAnswers').textContent = answers.length;
+      // Filtrar alunos por escola e turma
+      let filteredStudents = students;
       
-      const adequateCount = answers.filter(a => a.category === 'Adequado').length;
+      if (schoolFilter || classFilter) {
+        const relevantAllocations = allocations.filter(alloc => {
+          if (schoolFilter && alloc.school_id !== schoolFilter) return false;
+          if (classFilter && alloc.class_id !== classFilter) return false;
+          return true;
+        });
+        
+        const relevantStudentIds = relevantAllocations.map(a => a.student_id);
+        filteredStudents = students.filter(s => relevantStudentIds.includes(s.__backendId));
+      }
+
+      // Mapear respostas e aplicar filtro de categoria
+      let studentsWithResults = filteredStudents.map(student => {
+        const studentAnswer = answers.find(a => a.student_id === student.id);
+        const allocation = allocations.find(a => a.student_id === student.__backendId);
+        
+        let schoolName = '';
+        let className = '';
+        
+        if (allocation) {
+          const school = allData.find(s => s.__backendId === allocation.school_id);
+          const cls = allData.find(c => c.__backendId === allocation.class_id);
+          schoolName = school?.name || 'Escola não encontrada';
+          className = cls?.name || 'Turma não encontrada';
+        }
+        
+        return {
+          ...student,
+          answer: studentAnswer,
+          school: schoolName,
+          class: className
+        };
+      });
+
+      // Filtrar por categoria se selecionada
+      if (categoryFilter) {
+        studentsWithResults = studentsWithResults.filter(s => s.answer && s.answer.category === categoryFilter);
+      }
+
+      // Atualizar estatísticas baseadas nos resultados filtrados
+      const studentsWithAnswers = studentsWithResults.filter(s => s.answer);
+      
+      document.getElementById('totalStudents').textContent = filteredStudents.length;
+      document.getElementById('studentsWithAnswers').textContent = studentsWithAnswers.length;
+      
+      const adequateCount = studentsWithAnswers.filter(s => s.answer.category === 'Adequado').length;
       document.getElementById('excellentCount').textContent = adequateCount;
 
-      if (answers.length > 0) {
-        const averagePercentage = Math.round(answers.reduce((sum, a) => sum + a.percentage, 0) / answers.length);
+      if (studentsWithAnswers.length > 0) {
+        const averagePercentage = Math.round(studentsWithAnswers.reduce((sum, s) => sum + s.answer.percentage, 0) / studentsWithAnswers.length);
         document.getElementById('averageScore').textContent = `${averagePercentage}%`;
       } else {
         document.getElementById('averageScore').textContent = '0%';
       }
 
-      // Mostrar resultados dos alunos
-      const studentsWithResults = students.map(student => {
-        const studentAnswer = answers.find(a => a.student_id === student.id);
-        return {
-          ...student,
-          answer: studentAnswer
-        };
-      });
-
+      // Mostrar resultados
       if (studentsWithResults.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;">Nenhum resultado disponível.</p>';
+        container.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;">Nenhum resultado disponível com os filtros selecionados.</p>';
         return;
       }
 
       container.innerHTML = studentsWithResults.map(student => `
         <div class="student-card">
           <div class="student-name">${student.name}</div>
-          <div class="student-class">Escola: ${student.school}</div>
-          <div class="student-class">Turma: ${student.class}</div>
+          <div class="student-class">🏫 ${student.school || 'Não alocado'}</div>
+          <div class="student-class">📚 ${student.class || 'Não alocado'}</div>
           ${student.answer ? `
             <div class="student-score ${getCategoryClass(student.answer.category)}">
               ${student.answer.score}/${currentGabarito.length} (${student.answer.percentage}%)
@@ -2533,6 +2630,11 @@
           `}
         </div>
       `).join('');
+    }
+
+    function updateResults() {
+      updateResultsFilters();
+      filterResults();
     }
 
     function updateCharts() {
@@ -2594,16 +2696,32 @@
       const canvas = document.getElementById('schoolChart');
       const ctx = canvas.getContext('2d');
       
+      const allocations = allData.filter(item => 
+        item.type === 'allocation' && 
+        item.coordinator_id === currentCoordinatorId
+      );
+      
+      const schools = allData.filter(item => 
+        item.type === 'school' && 
+        item.coordinator_id === currentCoordinatorId
+      );
+      
       const schoolData = {};
       
-      students.forEach(student => {
-        const answer = answers.find(a => a.student_id === student.id);
-        if (answer) {
-          if (!schoolData[student.school]) {
-            schoolData[student.school] = { total: 0, sum: 0 };
+      answers.forEach(answer => {
+        const student = students.find(s => s.id === answer.student_id);
+        if (student) {
+          const allocation = allocations.find(a => a.student_id === student.__backendId);
+          if (allocation) {
+            const school = schools.find(s => s.__backendId === allocation.school_id);
+            if (school) {
+              if (!schoolData[school.name]) {
+                schoolData[school.name] = { total: 0, sum: 0 };
+              }
+              schoolData[school.name].total++;
+              schoolData[school.name].sum += answer.percentage;
+            }
           }
-          schoolData[student.school].total++;
-          schoolData[student.school].sum += answer.percentage;
         }
       });
 
@@ -2883,5 +3001,5 @@
     // Inicializar aplicação
     initializeApp();
   </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99cf0174875eba13',t:'MTc2Mjg3Njg1OS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99cf10273667ba13',t:'MTc2Mjg3NzQ2MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
