@@ -1342,6 +1342,26 @@
 
     async function initializeApp() {
       loadAllData();
+      
+      // Verificar se existe sessão salva
+      const savedSession = localStorage.getItem('currentSession');
+      if (savedSession && coordinatorNames[savedSession]) {
+        currentCoordinatorId = savedSession;
+        document.getElementById('currentCoordinator').textContent = coordinatorNames[savedSession];
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('mainSystem').style.display = 'block';
+        
+        console.log('Sessão restaurada:', savedSession);
+        
+        // Atualizar TODAS as visualizações
+        updateSchoolsList();
+        updateClassesList();
+        updateStudentsList();
+        updateAllSelects();
+        filterAllocations();
+        updateResults();
+        loadGabarito();
+      }
     }
 
     function login() {
@@ -1361,6 +1381,10 @@
 
       if (coordinatorPasswords[coordinatorId] === password) {
         currentCoordinatorId = coordinatorId;
+        
+        // Salvar sessão no localStorage
+        localStorage.setItem('currentSession', coordinatorId);
+        
         document.getElementById('currentCoordinator').textContent = coordinatorNames[coordinatorId];
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('mainSystem').style.display = 'block';
@@ -1387,6 +1411,10 @@
 
     function logout() {
       currentCoordinatorId = null;
+      
+      // Remover sessão do localStorage
+      localStorage.removeItem('currentSession');
+      
       document.getElementById('loginScreen').style.display = 'block';
       document.getElementById('mainSystem').style.display = 'none';
       
@@ -3260,5 +3288,5 @@
     // Inicializar aplicação
     initializeApp();
   </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99d6696ae2f1ba1a',t:'MTc2Mjk1NDUxOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99d676c1133dba1a',t:'MTc2Mjk1NTA2NC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
