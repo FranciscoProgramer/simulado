@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sistema de Simulados</title>
   <script src="/_sdk/data_sdk.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     body {
       box-sizing: border-box;
@@ -880,6 +881,8 @@
       </div>
       <div class="form-group"><label class="form-label">Filtrar por Categoria</label> <select id="resultsFilterCategory" class="form-select" onchange="filterResults()"> <option value="">🎯 Todas as Categorias</option> <option value="Adequado">✅ Adequado</option> <option value="Intermediário">⚠️ Intermediário</option> <option value="Defasagem">❌ Defasagem</option> </select>
       </div>
+     </div>
+     <div style="margin-top: 20px; text-align: center;"><button class="btn btn-success" onclick="exportResultsToFile()" style="font-size: 16px; padding: 12px 30px;"> 📥 Gerar Arquivo com Resultados </button>
      </div>
     </div>
     <div class="stats-grid">
@@ -2986,6 +2989,234 @@
       if (modal) modal.remove();
     }
 
+    function exportResultsToFile() {
+      if (!currentCoordinatorId) return;
+      
+      const schoolFilter = document.getElementById('resultsFilterSchool').value;
+      const classFilter = document.getElementById('resultsFilterClass').value;
+      const categoryFilter = document.getElementById('resultsFilterCategory').value;
+      
+      const students = allData.filter(item => 
+        item.type === 'student' && 
+        item.coordinator_id === currentCoordinatorId
+      );
+      
+      const answers = allData.filter(item => 
+        item.type === 'answers' && 
+        item.coordinator_id === currentCoordinatorId && 
+        item.month === currentMonth
+      );
+      
+      const allocations = allData.filter(item => 
+        item.type === 'allocation' && 
+        item.coordinator_id === currentCoordinatorId
+      );
+      
+      // Filtrar alunos por escola e turma
+      let filteredStudents = students;
+      
+      if (schoolFilter || classFilter) {
+        const relevantAllocations = allocations.filter(alloc => {
+          if (schoolFilter && alloc.school_id !== schoolFilter) return false;
+          if (classFilter && alloc.class_id !== classFilter) return false;
+          return true;
+        });
+        
+        const relevantStudentIds = relevantAllocations.map(a => a.student_id);
+        filteredStudents = students.filter(s => relevantStudentIds.includes(s.__backendId));
+      }
+
+      // Mapear respostas e aplicar filtro de categoria
+      let studentsWithResults = filteredStudents.map(student => {
+        const studentAnswer = answers.find(a => a.student_id === student.id);
+        const allocation = allocations.find(a => a.student_id === student.__backendId);
+        
+        let schoolName = '';
+        let className = '';
+        
+        if (allocation) {
+          const school = allData.find(s => s.__backendId === allocation.school_id);
+          const cls = allData.find(c => c.__backendId === allocation.class_id);
+          schoolName = school?.name || 'Escola não encontrada';
+          className = cls?.name || 'Turma não encontrada';
+        }
+        
+        return {
+          ...student,
+          answer: studentAnswer,
+          school: schoolName,
+          class: className
+        };
+      }).filter(s => s.answer); // Só exportar quem tem resultado
+
+      // Filtrar por categoria se selecionada
+      if (categoryFilter) {
+        studentsWithResults = studentsWithResults.filter(s => s.answer.category === categoryFilter);
+      }
+
+      if (studentsWithResults.length === 0) {
+        showMessage('Nenhum resultado disponível para exportar com os filtros selecionados!', 'error');
+        return;
+      }
+
+      // Ordenar por escola, turma e nome
+      studentsWithResults.sort((a, b) => {
+        if (a.school !== b.school) return a.school.localeCompare(b.school);
+        if (a.class !== b.class) return a.class.localeCompare(b.class);
+        return a.name.localeCompare(b.name);
+      });
+
+      // Estatísticas gerais
+      const adequateCount = studentsWithResults.filter(s => s.answer.category === 'Adequado').length;
+      const intermediateCount = studentsWithResults.filter(s => s.answer.category === 'Intermediário').length;
+      const defasagemCount = studentsWithResults.filter(s => s.answer.category === 'Defasagem').length;
+      const averagePercentage = Math.round(studentsWithResults.reduce((sum, s) => sum + s.answer.percentage, 0) / studentsWithResults.length);
+      
+      // Agrupar por escola e turma
+      const groupedResults = {};
+      studentsWithResults.forEach(student => {
+        const key = `${student.school} - ${student.class}`;
+        if (!groupedResults[key]) {
+          groupedResults[key] = [];
+        }
+        groupedResults[key].push(student);
+      });
+      
+      // Gerar PDF usando jsPDF
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      
+      let yPosition = 20;
+      const pageHeight = doc.internal.pageSize.height;
+      const marginBottom = 20;
+      
+      // Função para adicionar nova página se necessário
+      function checkPageBreak(neededSpace) {
+        if (yPosition + neededSpace > pageHeight - marginBottom) {
+          doc.addPage();
+          yPosition = 20;
+          return true;
+        }
+        return false;
+      }
+      
+      // Cabeçalho
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.text('RELATÓRIO DE RESULTADOS DO SIMULADO', 105, yPosition, { align: 'center' });
+      yPosition += 10;
+      
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Mês: ${currentMonth}`, 20, yPosition);
+      yPosition += 6;
+      doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 20, yPosition);
+      yPosition += 6;
+      doc.text(`Coordenadora: ${coordinatorNames[currentCoordinatorId]}`, 20, yPosition);
+      yPosition += 10;
+      
+      // Filtros aplicados
+      if (schoolFilter) {
+        const school = allData.find(s => s.__backendId === schoolFilter);
+        doc.text(`Escola: ${school?.name || 'Todas'}`, 20, yPosition);
+        yPosition += 6;
+      }
+      if (classFilter) {
+        const cls = allData.find(c => c.__backendId === classFilter);
+        doc.text(`Turma: ${cls?.name || 'Todas'}`, 20, yPosition);
+        yPosition += 6;
+      }
+      if (categoryFilter) {
+        doc.text(`Categoria: ${categoryFilter}`, 20, yPosition);
+        yPosition += 6;
+      }
+      
+      yPosition += 5;
+      
+      // Estatísticas gerais
+      checkPageBreak(40);
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('ESTATÍSTICAS GERAIS', 20, yPosition);
+      yPosition += 8;
+      
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Total de Alunos: ${studentsWithResults.length}`, 20, yPosition);
+      yPosition += 6;
+      doc.text(`Média Geral: ${averagePercentage}%`, 20, yPosition);
+      yPosition += 8;
+      
+      doc.text(`Adequado: ${adequateCount} alunos (${Math.round(adequateCount/studentsWithResults.length*100)}%)`, 20, yPosition);
+      yPosition += 6;
+      doc.text(`Intermediário: ${intermediateCount} alunos (${Math.round(intermediateCount/studentsWithResults.length*100)}%)`, 20, yPosition);
+      yPosition += 6;
+      doc.text(`Defasagem: ${defasagemCount} alunos (${Math.round(defasagemCount/studentsWithResults.length*100)}%)`, 20, yPosition);
+      yPosition += 12;
+      
+      // Listar resultados por grupo
+      Object.keys(groupedResults).sort().forEach(groupKey => {
+        const groupStudents = groupedResults[groupKey];
+        
+        checkPageBreak(50);
+        
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text(`${groupKey} (${groupStudents.length} alunos)`, 20, yPosition);
+        yPosition += 8;
+        
+        // Cabeçalho da tabela
+        doc.setFontSize(9);
+        doc.text('Nº', 20, yPosition);
+        doc.text('Nome do Aluno', 30, yPosition);
+        doc.text('Acertos', 110, yPosition);
+        doc.text('Nota', 140, yPosition);
+        doc.text('Nível', 165, yPosition);
+        yPosition += 5;
+        
+        doc.setFont(undefined, 'normal');
+        
+        groupStudents.forEach((student, index) => {
+          checkPageBreak(8);
+          
+          const number = String(index + 1);
+          const name = student.name.substring(0, 30);
+          const score = `${student.answer.score}/${currentGabarito.length}`;
+          const percentage = `${student.answer.percentage}%`;
+          const category = student.answer.category;
+          
+          doc.text(number, 20, yPosition);
+          doc.text(name, 30, yPosition);
+          doc.text(score, 110, yPosition);
+          doc.text(percentage, 140, yPosition);
+          doc.text(category, 165, yPosition);
+          yPosition += 6;
+        });
+        
+        yPosition += 8;
+      });
+      
+      // Nome do arquivo baseado nos filtros
+      let fileName = `Resultados_${currentMonth}`;
+      if (schoolFilter) {
+        const school = allData.find(s => s.__backendId === schoolFilter);
+        fileName += `_${school?.name.replace(/\s+/g, '_')}`;
+      }
+      if (classFilter) {
+        const cls = allData.find(c => c.__backendId === classFilter);
+        fileName += `_${cls?.name.replace(/\s+/g, '_')}`;
+      }
+      if (categoryFilter) {
+        fileName += `_${categoryFilter}`;
+      }
+      fileName += '.pdf';
+      
+      // Salvar PDF
+      doc.save(fileName);
+      
+      showMessage(`✅ Arquivo "${fileName}" gerado com sucesso! ${studentsWithResults.length} alunos exportados.`, 'success');
+    }
+
     function showMessage(text, type) {
       const container = document.getElementById('messages');
       const message = document.createElement('div');
@@ -3001,5 +3232,5 @@
     // Inicializar aplicação
     initializeApp();
   </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99cf10273667ba13',t:'MTc2Mjg3NzQ2MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99d6448c11a9ba1a',t:'MTc2Mjk1MzAwOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
